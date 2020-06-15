@@ -1,2 +1,4 @@
 rootProject.name = 'image-search'
+include 'Taggers:Text'
+findProject(':Taggers:Text')?.name = 'Text'
 
