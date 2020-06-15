@@ -36,7 +36,13 @@ public class Main {
         try(var index = Index.open()) {
             for(var path : args) {
                 System.out.println("Adding " + path);
-                index.add(path);
+
+                try {
+                    index.add(path);
+                } catch (Throwable throwable) {
+                    System.err.println("Could not add image " + path);
+                    throwable.printStackTrace();
+                }
             }
         }
     }

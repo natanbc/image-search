@@ -15,4 +15,5 @@ repositories {
 dependencies {
     compile 'net.sourceforge.tess4j:tess4j:4.5.1'
     compile 'org.xerial:sqlite-jdbc:3.31.1'
+    compile project(':Taggers:Text')
 }

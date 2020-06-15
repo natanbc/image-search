@@ -1,5 +1,10 @@
 package com.github.natanbc.imagesearch;
 
+import com.github.darkryu550.textextractor.TesseractExtractor;
+import com.github.darkryu550.textextractor.TextBlock;
+
+import javax.imageio.ImageIO;
+import java.awt.*;
 import java.io.File;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -8,16 +13,18 @@ import java.sql.SQLException;
 public class Index implements AutoCloseable {
     private static final String DB_FILE = "index.db";
     private final Connection connection;
+    private final TesseractExtractor ocr;
 
     private Index(Connection connection) {
         this.connection = connection;
+        this.ocr = new TesseractExtractor();
     }
 
     public static Index open() {
         return new Index(connect());
     }
 
-    public void add(String path) {
+    public void add(String path) throws Throwable {
         var image = Utils.readImage(path);
         var hash = Utils.hash(Utils.getData(image));
         if(exists(hash)) {
@@ -25,13 +32,20 @@ public class Index implements AutoCloseable {
             return;
         }
         var p = Utils.copyToIndex(path, hash);
-        var name = new File(path).getName();
+        var f = new File(path);
+        var name = f.getName();
+
+        /* Perform OCR extraction. */
+        var text = new StringBuilder();
+        for (var a : ocr.extractTextBlocks(ImageIO.read(f))) {
+            text.append(a.getText());
+        }
+
         executeSql(() -> {
             try(var s = connection.prepareStatement("insert into images values(?, ?, ?, ?)")) {
                 s.setString(1, name);
                 s.setString(2, hash);
-                //TODO ocr
-                s.setString(3, "");
+                s.setString(3, text.toString());
                 s.setString(4, p);
                 s.execute();
             }
