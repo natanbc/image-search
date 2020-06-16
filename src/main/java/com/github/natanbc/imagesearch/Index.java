@@ -6,33 +6,36 @@ import com.github.darkryu550.textextractor.TextBlock;
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.io.File;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public class Index implements AutoCloseable {
     private static final String DB_FILE = "index.db";
+    private final String path;
     private final Connection connection;
     private final TesseractExtractor ocr;
 
-    private Index(Connection connection) {
+    private Index(String path, Connection connection) {
+        this.path = path;
         this.connection = connection;
         this.ocr = new TesseractExtractor();
     }
 
-    public static Index open() {
-        return new Index(connect());
+    public static Index open(String path) {
+        return new Index(path, connect(path));
     }
 
-    public void add(String path) throws Throwable {
-        var image = Utils.readImage(path);
+    public void add(String imagePath) throws Throwable {
+        var image = Utils.readImage(imagePath);
         var hash = Utils.hash(Utils.getData(image));
         if(exists(hash)) {
-            System.err.println(path + ": Image already exists in index");
+            System.err.println(imagePath + ": Image already exists in index");
             return;
         }
-        var p = Utils.copyToIndex(path, hash);
-        var f = new File(path);
+        var p = Utils.copyToIndex(imagePath, path, hash);
+        var f = new File(imagePath);
         var name = f.getName();
 
         /* Perform OCR extraction. */
@@ -50,7 +53,7 @@ public class Index implements AutoCloseable {
                 s.execute();
             }
         });
-        System.out.println("Added " + path + " (hash: " + hash + ") to index");
+        System.out.println("Added " + imagePath + " (hash: " + hash + ") to index");
     }
 
     public void search(String text) {
@@ -80,7 +83,7 @@ public class Index implements AutoCloseable {
             System.err.println("There's no image with hash " + hash + " on the index");
             return;
         }
-        var path = executeSql(() -> {
+        var imagePath = executeSql(() -> {
             try(var s = connection.prepareStatement("select path from images where hash = ?")) {
                 s.setString(1, hash);
                 try(var rs = s.executeQuery()) {
@@ -89,7 +92,7 @@ public class Index implements AutoCloseable {
                 }
             }
         });
-        Utils.rm(path);
+        Utils.rm(path, imagePath);
         executeSql(() -> {
             try(var s = connection.prepareStatement("delete from images where hash = ?")) {
                 s.setString(1, hash);
@@ -160,9 +163,9 @@ public class Index implements AutoCloseable {
         T execute() throws SQLException;
     }
 
-    private static Connection connect() {
+    private static Connection connect(String path) {
         try {
-            var connection = DriverManager.getConnection("jdbc:sqlite:" + DB_FILE);
+            var connection = DriverManager.getConnection("jdbc:sqlite:" + Path.of(path, DB_FILE));
             try(var s = connection.createStatement()) {
                 s.execute("create table if not exists images(name string, hash string," +
                         "text string, path string)");

@@ -1,9 +1,13 @@
 plugins {
     id 'java'
+    id 'application'
+    id 'com.github.johnrengelman.shadow' version '5.2.0'
 }
 
 group 'com.github.natanbc'
 version '0.1'
+
+mainClassName = 'com.github.natanbc.imagesearch.Main'
 
 sourceCompatibility = 14
 targetCompatibility = 14
@@ -15,5 +19,6 @@ repositories {
 dependencies {
     compile 'net.sourceforge.tess4j:tess4j:4.5.1'
     compile 'org.xerial:sqlite-jdbc:3.31.1'
+    compile 'commons-cli:commons-cli:1.4'
     compile project(':Taggers:Text')
 }

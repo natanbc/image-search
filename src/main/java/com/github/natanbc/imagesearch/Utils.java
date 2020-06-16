@@ -13,9 +13,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 public class Utils {
-    public static void rm(String path) {
+    public static void rm(String dataPath, String imagePath) {
         try {
-            Files.deleteIfExists(Path.of(path));
+            Files.deleteIfExists(Path.of(dataPath, imagePath));
         } catch (IOException e) {
             System.err.println("Error deleting image:");
             e.printStackTrace();
@@ -24,12 +24,13 @@ public class Utils {
         }
     }
 
-    public static String copyToIndex(String path, String hash) {
+    public static String copyToIndex(String imagePath, String dataPath, String hash) {
         try {
-            var dest = Path.of("index", hash + ".png");
+            var relative = Path.of("index", hash + ".png");
+            var dest = Path.of(dataPath).resolve(relative);
             Files.createDirectories(dest.getParent());
-            Files.copy(Path.of(path), dest);
-            return dest.toString();
+            Files.copy(Path.of(imagePath), dest);
+            return relative.toString();
         } catch (IOException e) {
             System.err.println("Error copying file to index:");
             e.printStackTrace();
