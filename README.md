@@ -19,7 +19,7 @@ for similar images.
 
 Currently, only text-based searching is implemented. Images must have readable
 text in english or portuguese (due to repository size concerns, we only included
-the models for these two languages, other models can be found [here](ttps://github.com/tesseract-ocr/tessdata_fast)).
+the models for these two languages, other models can be found [here](https://github.com/tesseract-ocr/tessdata_fast)).
 
 The example image is a screenshot of the assignment prompt.
 
