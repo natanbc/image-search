@@ -11,6 +11,4 @@ repositories {
 
 dependencies {
     testCompile group: 'junit', name: 'junit', version: '4.12'
-    compile 'net.sourceforge.tess4j:tess4j:4.5.1'
-    compile project(':Tag')
 }

@@ -1,5 +1,10 @@
 rootProject.name = 'image-search'
 include 'Taggers:Text'
 findProject(':Taggers:Text')?.name = 'Text'
-include 'Tagger'
+include 'Tag'
+include 'Frequency'
+include 'Taggers:Frequency'
+findProject(':Taggers:Frequency')?.name = 'Frequency'
+include 'Taggers:Frequency'
+findProject(':Taggers:Frequency')?.name = 'Frequency'
 
