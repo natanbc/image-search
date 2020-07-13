@@ -110,9 +110,9 @@ public final class Haralick {
 
     /** Mean of the rows. */
     public double rowMean() {
-        var sum = 0;
+        var sum = 0.0;
         for(int i = 0; i < this.levels; ++i) {
-            var inner = 0;
+            var inner = 0.0;
             for(int j = 0; j < this.levels; ++j)
                 inner += this.matrix.get(i * this.levels + j);
             sum += i * inner;
@@ -122,9 +122,9 @@ public final class Haralick {
 
     /** Mean of the columns. */
     public double columnMean() {
-        var sum = 0;
+        var sum = 0.0;
         for(int j = 0; j < this.levels; ++j) {
-            var inner = 0;
+            var inner = 0.0;
             for(int i = 0; i < this.levels; ++i)
                 inner += this.matrix.get(i * this.levels + j);
             sum += j * inner;
@@ -136,9 +136,9 @@ public final class Haralick {
     public double rowVariance() {
         var mr = this.rowMean();
 
-        var sum = 0;
+        var sum = 0.0;
         for(int i = 0; i < this.levels; ++i) {
-            var inner = 0;
+            var inner = 0.0;
             for(int j = 0; j < this.levels; ++j)
                 inner += this.matrix.get(i * this.levels + j);
 
@@ -151,14 +151,15 @@ public final class Haralick {
     public double columnVariance() {
         var mc = this.columnMean();
 
-        var sum = 0;
+        var sum = 0.0;
         for(int j = 0; j < this.levels; ++j) {
-            var inner = 0;
+            var inner = 0.0;
             for(int i = 0; i < this.levels; ++i)
                 inner += this.matrix.get(i * this.levels + j);
 
             sum += Math.pow((double)j - mc, 2) * inner;
         }
+        System.out.printf("%f\n", sum);
         return sum;
     }
 }
