@@ -8,6 +8,7 @@ import java.awt.image.BufferedImage;
 import java.awt.image.ColorConvertOp;
 import java.sql.SQLType;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Optional;
 
 
@@ -53,6 +54,18 @@ public class Histogram implements Tagger {
         }
 
         return Optional.of(histogram);
+    }
+
+    @Override
+    public Object getTagFromString(String value) {
+        try {
+            return Arrays.stream(value.split(","))
+                .mapToInt(Integer::parseInt).toArray();
+        }catch(NumberFormatException e) {
+            throw new IllegalArgumentException(
+                "Expected a list of integers separated by commas",
+                e);
+        }
     }
 
     @Override

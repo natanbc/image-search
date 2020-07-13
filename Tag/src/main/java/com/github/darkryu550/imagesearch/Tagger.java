@@ -19,4 +19,15 @@ public interface Tagger {
      * not because of an error unrelated to the nature of the image.
      */
     Optional<Object> tag(BufferedImage image) throws TaggingException;
+
+    /** Given a {@link String} representing a tag from this tagger, try to
+     * build a tag object that's equivalent to it.
+     *
+     * @param value The string representation of the tag.
+     * @throws IllegalArgumentException If the given string value does not
+     * contain a valid representation in this tag format or if not enough
+     * information is present for the creation of the tag object.
+     * @return The tag that most closely matches the given input string.
+     */
+    Object getTagFromString(String value);
 }

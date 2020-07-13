@@ -21,6 +21,13 @@ public class TesseractTagger implements Tagger {
     }
 
     @Override
+    public Object getTagFromString(String value) {
+        /* Ha ha, you thought this was gonna have more to it,
+         * BUT IT'S ALREADY A STRING! */
+        return value;
+    }
+
+    @Override
     public SQLType getType() {
         return new SQLType() {
             @Override

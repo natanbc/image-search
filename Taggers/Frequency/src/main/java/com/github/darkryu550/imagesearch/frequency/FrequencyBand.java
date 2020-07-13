@@ -11,6 +11,7 @@ import java.awt.image.ColorConvertOp;
 import java.sql.SQLType;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.stream.IntStream;
 
@@ -92,6 +93,18 @@ public class FrequencyBand implements Tagger {
         ints.add(mband1);
 
         return Optional.of(ints);
+    }
+
+    @Override
+    public Object getTagFromString(String value) {
+        try {
+            return Arrays.stream(value.split(","))
+                .mapToInt(Integer::parseInt).toArray();
+        }catch(NumberFormatException e) {
+            throw new IllegalArgumentException(
+                "Expected a list of integers separated by commas",
+                e);
+        }
     }
 
     private static double area(double a, double b) {

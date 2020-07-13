@@ -27,6 +27,15 @@ public class HaralickMaximumProbability implements Tagger {
     }
 
     @Override
+    public Object getTagFromString(String value) {
+        try {
+            return Double.parseDouble(value);
+        } catch(NumberFormatException e) {
+            throw new IllegalArgumentException("Expected a real number literal", e);
+        }
+    }
+
+    @Override
     public SQLType getType() {
         return new SQLType() {
             @Override
