@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.HashSet;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -62,6 +63,7 @@ public class Main implements AutoCloseable {
                 .addSubcommand(main.getAddSubcommand())
                 .addSubcommand(main.getQuerySubcommand())
                 .addSubcommand(main.getGetSubcommand())
+                .addSubcommand(main.getPassSubcommand())
                 .execute(args);
 
             /* The cached thread pool may keep threads alive for 60 more seconds.
@@ -245,7 +247,7 @@ public class Main implements AutoCloseable {
         @Override
         public Integer call() throws Exception {
             var selection = Selection.none();
-            if(this.selections.length > 0) {
+            if(this.selections != null && this.selections.length > 0) {
                 for (var s : this.selections) {
                     Selection sel = selectionFromString(s);
                     selection = selection.join(sel);
@@ -295,6 +297,42 @@ public class Main implements AutoCloseable {
         }
     }
     protected Get getGetSubcommand() { return new Get(); }
+
+    @CommandLine.Command(
+        name = "pass",
+        mixinStandardHelpOptions = true,
+        description = "Pass a set of taggers over a selection of elements in the database")
+    protected class Pass implements Callable<Integer> {
+        @CommandLine.Option(names = { "-t", "--tagger" }, description = "Specify a tagger")
+        protected HashSet<String> taggers;
+        @CommandLine.Option(names = { "-s", "--select" }, description = "Make a selection")
+        protected String[] selections;
+
+        @Override
+        public Integer call() throws Exception {
+            var selection = Selection.all();
+            if(this.selections != null && this.selections.length > 0) {
+                selection = Selection.none();
+                for (var s : this.selections) {
+                    Selection sel = selectionFromString(s);
+                    selection = selection.join(sel);
+                }
+            }
+
+            var pass = database.getPassWithAllTaggers();
+            if(this.taggers != null && this.taggers.size() > 0)
+                pass = database.getPassForFilteredTaggers((name, tagger) -> {
+                    var cont = taggers.contains(name);
+                    if(cont) taggers.remove(name);
+
+                    return cont;
+                });
+
+            pass.runOn(executor, selection);
+            return 0;
+        }
+    }
+    protected Pass getPassSubcommand() { return new Pass(); }
 
     /** Register the taggers in the database.
      *
