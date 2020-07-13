@@ -5,6 +5,6 @@ include 'Tag'
 include 'Frequency'
 include 'Taggers:Frequency'
 findProject(':Taggers:Frequency')?.name = 'Frequency'
-include 'Taggers:Frequency'
-findProject(':Taggers:Frequency')?.name = 'Frequency'
+include 'Taggers:Magnitude'
+findProject(':Taggers:Magnitude')?.name = 'Magnitude'
 

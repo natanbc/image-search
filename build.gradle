@@ -21,6 +21,7 @@ dependencies {
     compile 'org.xerial:sqlite-jdbc:3.31.1'
     compile 'commons-cli:commons-cli:1.4'
     compile project(':Taggers:Frequency')
+    compile project(':Taggers:Magnitude')
     compile project(':Taggers:Text')
     compile project(':Tag')
 }
