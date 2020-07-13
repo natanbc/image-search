@@ -1,104 +1,329 @@
 package com.github.natanbc.imagesearch;
 
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
+import com.github.darkryu550.imagesearch.frequency.FrequencyBand;
+import com.github.darkryu550.imagesearch.magnitude.*;
+import com.github.darkryu550.textextractor.TesseractTagger;
+import com.github.natanbc.imagesearch.db.Database;
+import com.github.natanbc.imagesearch.db.Image;
+import com.github.natanbc.imagesearch.db.Selection;
+import com.github.natanbc.imagesearch.db.pool.SingleConnectionPool;
+import picocli.CommandLine;
 
-import java.io.IOException;
-import java.nio.file.Files;
+import java.io.PrintStream;
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
-public class Main {
+@CommandLine.Command(
+    name = "image-search",
+    mixinStandardHelpOptions = true,
+    description = "Search and managed a database of images")
+public class Main implements AutoCloseable {
+    /* After how many characters should a long string get elided? */
+    private static final int CHARACTER_ELISION = 60;
+
+    protected final ExecutorService executor;
+    protected final SingleConnectionPool connection;
+    protected final Database database;
+
+    protected Main()
+        throws SQLException, InterruptedException {
+
+        this.executor   = Executors.newCachedThreadPool();
+        this.connection = new SingleConnectionPool(connect("./index.db"));
+        this.database   = new Database(connection);
+    }
+
+    @Override
+    public void close() throws Exception {
+        executor.shutdown();
+        executor.awaitTermination(10, TimeUnit.SECONDS);
+        connection.close();
+    }
+
     public static void main(String[] args) {
-        var options = new Options();
-        options.addOption("h", "help", false, "Show the help message");
-        options.addOption("d", "data-path", true, "Path to where data should be stored." +
-                "Defaults to the current working directory");
-        CommandLine cmd;
-        try {
-            cmd = new DefaultParser().parse(options, args);
-        } catch (ParseException e) {
-            System.out.println(e.getMessage());
-            printHelp(options);
-            System.exit(1);
-            return;
-        }
-        if(cmd.getArgs().length == 0 || cmd.hasOption('h')) {
-            printHelp(options);
-            return;
-        }
-        var functionArguments = Arrays.copyOfRange(cmd.getArgs(), 1, cmd.getArgs().length);
-        var path = cmd.hasOption('d') ? cmd.getOptionValue('d') : ".";
-        validatePath(Path.of(path));
-        switch (cmd.getArgs()[0]) {
-            case "add" -> add(path, functionArguments);
-            case "list" -> list(path);
-            case "remove" -> remove(path, functionArguments);
-            case "search" -> search(path, functionArguments);
-            default -> printHelp(options);
-        }
-    }
-
-    private static void printHelp(Options options) {
-        new HelpFormatter().printHelp("image-search.jar <add <path>/list/remove <hash>/search <query>>", options);
-        System.out.println("Search queries must be valid arguments for the SQLite 'like' operator,");
-        System.out.println("for example: `java -jar image-search.jar search \"%text%\"`");
-    }
-
-    private static void add(String path, String[] args) {
-        try(var index = Index.open(path)) {
-            for(var image : args) {
-                System.out.println("Adding " + image);
-
-                try {
-                    index.add(image);
-                } catch (Throwable throwable) {
-                    System.err.println("Could not add image " + image);
-                    throwable.printStackTrace();
-                }
+        try(var main = new Main()) {
+            /* Start by registering our taggers into the database. */
+            try {
+                main.register();
+            } catch (InterruptedException | SQLException e) {
+                System.err.println("Could not register database tagger:");
+                e.printStackTrace();
+                System.exit(1);
             }
-        }
-    }
 
-    private static void list(String path) {
-        try(var index = Index.open(path)) {
-            index.list();
-        }
-    }
+            var result = new CommandLine(main)
+                .addSubcommand(main.getAddSubcommand())
+                .addSubcommand(main.getQuerySubcommand())
+                .addSubcommand(main.getGetSubcommand())
+                .execute(args);
 
-    private static void remove(String path, String[] args) {
-        try(var index = Index.open(path)) {
-            for(var hash : args) {
-                System.out.println("Removing " + hash);
-                index.remove(hash);
-            }
-        }
-    }
-
-    private static void search(String path, String[] args) {
-        try(var index = Index.open(path)) {
-            for(var search : args) {
-                System.out.println("Searching for " + search);
-                index.search(search);
-                System.out.println();
-            }
-        }
-    }
-
-    private static void validatePath(Path path) {
-        if(Files.exists(path) && !Files.isDirectory(path)) {
-            System.out.println("Invalid data path: " + path);
-            System.exit(1);
-        }
-        try {
-            Files.createDirectories(path);
-        } catch (IOException e) {
-            System.err.println("Unable to create data path:");
+            /* The cached thread pool may keep threads alive for 60 more seconds.
+             * After we're sure all tasks have been terminated, we can safely just
+             * exit and let those those threads get killed. */
+            System.exit(result);
+        } catch (Exception e) {
+            /* General top-level error stop. Generally it's a better idea to
+             * catch errors in their local contexts in order to provide more
+             * interesting contextual information. */
+            System.err.println("Caught top level fatality:");
+            e.printStackTrace();
             e.printStackTrace();
             System.exit(1);
         }
     }
+
+    /** Pretty-print the contents of all the images in a selection.
+     *
+     * @param selection The selection that will be queried.
+     * @param target The writer on to which the data will be printed.
+     * @throws InterruptedException When a connection to the database could not
+     * be acquired from the pool.
+     * @throws SQLException Upon failure of a SQL operation.
+     */
+    protected void printImageSummaryFromSelection(Selection selection, PrintStream target)
+        throws SQLException, InterruptedException {
+
+        for(var image : this.database.getImages(selection)) {
+            printImageSummary(image, target);
+        }
+    }
+
+    /** Pretty-print the contents of an image entry, in a summed up way.
+     * @param image The image whose contents are to be pretty-printed.
+     * @param target The writer on to which the data will be printed.
+     */
+    protected void printImageSummary(Image image, PrintStream target) {
+        target.println();
+        target.printf("Image ID:   %s\n", image.getId().toString());
+        target.printf("Image path: %s\n", image.getPath().toString());
+        target.println("Tags:");
+
+        /* This is a surprise tool that will help us later. */
+        var longestTagLength = 0;
+        for(var entry : image.getTags().keySet())
+            if(entry.length() > longestTagLength)
+                longestTagLength = entry.length();
+
+        for(var entry : image.getTags().entrySet()) {
+            var missing = longestTagLength - entry.getKey().length();
+            target.printf("    %s:%s ", entry.getKey(), " ".repeat(missing));
+
+            String value;
+            if(entry.getValue() == null)
+                value = "NULL";
+            else
+                value = entry.getValue().toString();
+
+            var elided = false;
+            if(value.contains("\n")) {
+                value = value.substring(0, value.indexOf("\n"));
+                elided = true;
+            }
+            if(value.contains("\r")) {
+                value = value.substring(0, value.indexOf("\n"));
+                elided = true;
+            }
+            if(value.length() > Main.CHARACTER_ELISION) {
+                value = value.substring(0, Main.CHARACTER_ELISION);
+                elided = true;
+            }
+            if(elided) value += " (...)";
+
+            target.println(value);
+        }
+    }
+
+    @CommandLine.Command(
+        name = "add",
+        mixinStandardHelpOptions = true,
+        description = "Adds a new image to the database")
+    protected class Add implements Callable<Integer> {
+        @CommandLine.Parameters(index = "0", paramLabel = "FILE", description = "The image to be added")
+        protected Path file;
+        @CommandLine.Option(names = { "-s", "--skip-tagging" }, description = "Don't run any taggers on the added image")
+        protected boolean skipTagging = false;
+
+        @Override
+        public Integer call() throws Exception {
+            var selection = database.addImage(this.file);
+            if(!this.skipTagging)
+                database.getPassWithAllTaggers().runOn(executor, selection);
+
+            Main.this.printImageSummaryFromSelection(selection, System.out);
+            return 0;
+        }
+    }
+    protected Add getAddSubcommand() { return new Add(); }
+
+    /** Convert a string into a selection, the string has the following form:
+     *      [Column Name][Whitespace]*[Operator][Whitespace]*[Value]
+     * Where [Column Name] is the string representing the column name,
+     * [Value] is the string that will be converted to the column's value and
+     * [Operator] is one of the following:
+     *      - {@code =}  Equality
+     *      - {@code <>} Inequality
+     *      - {@code <}  Less than
+     *      - {@code >}  Greater than
+     *      - {@code >=} Greater than or equal to
+     *      - {@code <=} Less than or equal to
+     *      - {@code ~}  Likeness
+     *      - {@code //} Between
+     *      - {@code *} All, in this case, all other values are ignored.
+     */
+    protected Selection selectionFromString(String s) {
+        String  operator = null;
+        Integer index = null;
+
+        var e = new IllegalArgumentException("More than one operator");
+        var i = s.indexOf(">=");
+        if(i != -1) { operator = ">="; index = i; }
+        i = s.indexOf("<=");
+        if(i != -1) { if(operator != null) throw e; operator = "<="; index = i; }
+        i = s.indexOf("<>");
+        if(i != -1) { if(operator != null) throw e; operator = "<>"; index = i; }
+        i = s.indexOf("//");
+        if(i != -1) { if(operator != null) throw e; operator = "//"; index = i; }
+        i = s.indexOf("~");
+        if(i != -1) { if(operator != null) throw e; operator = "~"; index = i; }
+        i = s.indexOf("=");
+        if(i != -1) { if(operator != null) throw e; operator = "="; index = i; }
+        i = s.indexOf(">");
+        if(i != -1) { if(operator != null) throw e; operator = ">"; index = i; }
+        i = s.indexOf("<");
+        if(i != -1) { if(operator != null) throw e; operator = "<"; index = i; }
+        i = s.indexOf("*");
+        if(i != -1) { if(operator != null) throw e; operator = "*"; index = i; }
+
+        /* Checking for the operator also covers for the index. */
+        if(operator == null)
+            throw new IllegalArgumentException("No valid operator found in expression");
+
+        /* Catch the wildcard. */
+        if(operator.equals("*"))
+            return Selection.all();
+
+        var lhs = s.substring(0, index).strip();
+        var rhs = s.substring(index + operator.length()).strip();
+
+        var src = this.database.getTaggers().get(lhs);
+        if(src == null)
+            throw new IllegalArgumentException("No registered tagger matches \"" + lhs + "\"");
+        var tag = src.getTagFromString(rhs);
+        var col = Database.taggerColumnName(lhs);
+
+        Selection sel;
+        switch(operator) {
+            case "="  -> sel = Selection.equals(col, tag);
+            case "<"  -> sel = Selection.lessThan(col, tag);
+            case ">"  -> sel = Selection.greaterThan(col, tag);
+            case "~"  -> sel = Selection.like(col, tag);
+            case "<>" -> sel = Selection.differs(col, tag);
+            case "<=" -> sel = Selection.lessThanOrEqualTo(col, tag);
+            case ">=" -> sel = Selection.greaterThanOrEqualTo(col, tag);
+            case "//" -> throw new RuntimeException("TODO: Implement between operator");
+            default -> throw new RuntimeException("Invalid operator " + operator);
+        }
+
+        return sel;
+    }
+
+    @CommandLine.Command(
+        name = "query",
+        mixinStandardHelpOptions = true,
+        description = "Queries a set of images from the database")
+    protected class Query implements Callable<Integer> {
+        @CommandLine.Option(names = { "-s", "--select" }, description = "Make a selection")
+        protected String[] selections;
+
+        @Override
+        public Integer call() throws Exception {
+            var selection = Selection.none();
+            if(this.selections.length > 0) {
+                for (var s : this.selections) {
+                    Selection sel = selectionFromString(s);
+                    selection = selection.join(sel);
+                }
+            } else
+                /* Default to selecting everything. */
+                selection = Selection.all();
+
+            Main.this.printImageSummaryFromSelection(selection, System.out);
+            return 0;
+        }
+    }
+    protected Query getQuerySubcommand() { return new Query(); }
+
+    @CommandLine.Command(
+        name = "get",
+        mixinStandardHelpOptions = true,
+        description = "Get one of the tags from an image in the database")
+    protected class Get implements Callable<Integer> {
+        @CommandLine.Parameters(index = "0", paramLabel = "UUID", description = "The ID of the image")
+        protected UUID id;
+        @CommandLine.Parameters(index = "1", paramLabel = "TAG", description = "Name of the tag to fetch")
+        protected String tag;
+
+        @Override
+        public Integer call() throws Exception {
+            var selection = Selection.equals("id", this.id);
+            var images = database.getImages(selection);
+
+            if(images.size() <= 0) {
+                System.err.println("Could not find image with ID " + this.id.toString());
+                return 1;
+            }
+            if(images.size() > 1)
+                throw new RuntimeException("More than one image has the same UUID");
+
+            for(var image : images) {
+                var tag = image.getTag(this.tag);
+                if(tag.isPresent())
+                    System.out.println(tag.get().toString());
+                else {
+                    System.err.println("Could not find tag " + this.tag);
+                    return 1;
+                }
+            }
+            return 0;
+        }
+    }
+    protected Get getGetSubcommand() { return new Get(); }
+
+    /** Register the taggers in the database.
+     *
+     * @throws InterruptedException When a connection to the database could not
+     * be acquired from the pool.
+     * @throws SQLException Upon failure of a SQL operation.
+     */
+    protected void register() throws InterruptedException, SQLException {
+        database.register("frequencyBand", new FrequencyBand());
+        database.register("tesseract", new TesseractTagger());
+        database.register("haralickContrast", new HaralickContrast());
+        database.register("haralickCorrelation", new HaralickCorrelation());
+        database.register("haralickEnergy", new HaralickEnergy());
+        database.register("haralickEntropy", new HaralickEntropy());
+        database.register("haralickHomogeneity", new HaralickHomogeneity());
+        database.register("haralickMaxProb", new HaralickMaximumProbability());
+        database.register("histogram", new Histogram());
+    }
+
+    private static Connection connect(String path) {
+        try {
+            return DriverManager.getConnection("jdbc:sqlite:" + Path.of(path));
+        } catch (SQLException e) {
+            System.err.println("Unable to open database file:");
+            e.printStackTrace();
+            System.exit(1);
+            throw new AssertionError(e);
+        }
+    }
+
+
 }

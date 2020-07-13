@@ -7,7 +7,7 @@ plugins {
 group 'com.github.natanbc'
 version '0.1'
 
-mainClassName = 'com.github.natanbc.imagesearch.NewMain'
+mainClassName = 'com.github.natanbc.imagesearch.Main'
 
 sourceCompatibility = 14
 targetCompatibility = 14
