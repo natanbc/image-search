@@ -7,16 +7,25 @@ import com.github.natanbc.imagesearch.db.Database;
 import com.github.natanbc.imagesearch.db.Image;
 import com.github.natanbc.imagesearch.db.Selection;
 import com.github.natanbc.imagesearch.db.pool.SingleConnectionPool;
+import org.apache.commons.beanutils.converters.IntegerArrayConverter;
+import picocli.CommandLine;
 
+import java.io.File;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+@CommandLine.Command(
+    name = "image-search",
+    mixinStandardHelpOptions = true,
+    description = "Search and managed a database of images")
 public class NewMain implements AutoCloseable {
     /* After how many characters should a long string get elided? */
     private static final int CHARACTER_ELISION = 60;
@@ -51,7 +60,16 @@ public class NewMain implements AutoCloseable {
                 System.exit(1);
             }
 
-            main.printImageSummaryFromSelection(Selection.all(), System.out);
+            var result = new CommandLine(main)
+                .addSubcommand(main.getAddSubcommand())
+                .addSubcommand(main.getQuerySubcommand())
+                .addSubcommand(main.getGetSubcommand())
+                .execute(args);
+
+            /* The cached thread pool may keep threads alive for 60 more seconds.
+             * After we're sure all tasks have been terminated, we can safely just
+             * exit and let those those threads get killed. */
+            System.exit(result);
         } catch (Exception e) {
             /* General top-level error stop. Generally it's a better idea to
              * catch errors in their local contexts in order to provide more
@@ -61,11 +79,6 @@ public class NewMain implements AutoCloseable {
             e.printStackTrace();
             System.exit(1);
         }
-
-        /* The cached thread pool may keep threads alive for 60 more seconds.
-         * After we're sure all tasks have been terminated, we can safely just
-         * exit and let those those threads get killed. */
-        System.exit(0);
     }
 
     /** Pretty-print the contents of all the images in a selection.
@@ -128,6 +141,162 @@ public class NewMain implements AutoCloseable {
             target.println(value);
         }
     }
+
+    @CommandLine.Command(
+        name = "add",
+        mixinStandardHelpOptions = true,
+        description = "Adds a new image to the database")
+    protected class Add implements Callable<Integer> {
+        @CommandLine.Parameters(index = "0", paramLabel = "FILE", description = "The image to be added")
+        protected Path file;
+        @CommandLine.Option(names = { "-s", "--skip-tagging" }, description = "Don't run any taggers on the added image")
+        protected boolean skipTagging = false;
+
+        @Override
+        public Integer call() throws Exception {
+            var selection = database.addImage(this.file);
+            if(!this.skipTagging)
+                database.getPassWithAllTaggers().runOn(executor, selection);
+
+            NewMain.this.printImageSummaryFromSelection(selection, System.out);
+            return 0;
+        }
+    }
+    protected Add getAddSubcommand() { return new Add(); }
+
+    /** Convert a string into a selection, the string has the following form:
+     *      [Column Name][Whitespace]*[Operator][Whitespace]*[Value]
+     * Where [Column Name] is the string representing the column name,
+     * [Value] is the string that will be converted to the column's value and
+     * [Operator] is one of the following:
+     *      - {@code =}  Equality
+     *      - {@code <>} Inequality
+     *      - {@code <}  Less than
+     *      - {@code >}  Greater than
+     *      - {@code >=} Greater than or equal to
+     *      - {@code <=} Less than or equal to
+     *      - {@code ~}  Likeness
+     *      - {@code //} Between
+     *      - {@code *} All, in this case, all other values are ignored.
+     */
+    protected Selection selectionFromString(String s) {
+        String  operator = null;
+        Integer index = null;
+
+        var e = new IllegalArgumentException("More than one operator");
+        var i = s.indexOf(">=");
+        if(i != -1) { operator = ">="; index = i; }
+        i = s.indexOf("<=");
+        if(i != -1) { if(operator != null) throw e; operator = "<="; index = i; }
+        i = s.indexOf("<>");
+        if(i != -1) { if(operator != null) throw e; operator = "<>"; index = i; }
+        i = s.indexOf("//");
+        if(i != -1) { if(operator != null) throw e; operator = "//"; index = i; }
+        i = s.indexOf("~");
+        if(i != -1) { if(operator != null) throw e; operator = "~"; index = i; }
+        i = s.indexOf("=");
+        if(i != -1) { if(operator != null) throw e; operator = "="; index = i; }
+        i = s.indexOf(">");
+        if(i != -1) { if(operator != null) throw e; operator = ">"; index = i; }
+        i = s.indexOf("<");
+        if(i != -1) { if(operator != null) throw e; operator = "<"; index = i; }
+        i = s.indexOf("*");
+        if(i != -1) { if(operator != null) throw e; operator = "*"; index = i; }
+
+        /* Checking for the operator also covers for the index. */
+        if(operator == null)
+            throw new IllegalArgumentException("No valid operator found in expression");
+
+        /* Catch the wildcard. */
+        if(operator.equals("*"))
+            return Selection.all();
+
+        var lhs = s.substring(0, index).strip();
+        var rhs = s.substring(index + operator.length()).strip();
+
+        var src = this.database.getTaggers().get(lhs);
+        if(src == null)
+            throw new IllegalArgumentException("No registered tagger matches \"" + lhs + "\"");
+        var tag = src.getTagFromString(rhs);
+        var col = Database.taggerColumnName(lhs);
+
+        Selection sel;
+        switch(operator) {
+            case "="  -> sel = Selection.equals(col, tag);
+            case "<"  -> sel = Selection.lessThan(col, tag);
+            case ">"  -> sel = Selection.greaterThan(col, tag);
+            case "~"  -> sel = Selection.like(col, tag);
+            case "<>" -> sel = Selection.differs(col, tag);
+            case "<=" -> sel = Selection.lessThanOrEqualTo(col, tag);
+            case ">=" -> sel = Selection.greaterThanOrEqualTo(col, tag);
+            case "//" -> throw new RuntimeException("TODO: Implement between operator");
+            default -> throw new RuntimeException("Invalid operator " + operator);
+        }
+
+        return sel;
+    }
+
+    @CommandLine.Command(
+        name = "query",
+        mixinStandardHelpOptions = true,
+        description = "Queries a set of images from the database")
+    protected class Query implements Callable<Integer> {
+        @CommandLine.Option(names = { "-s", "--select" }, description = "Make a selection")
+        protected String[] selections;
+
+        @Override
+        public Integer call() throws Exception {
+            var selection = Selection.none();
+            if(this.selections.length > 0) {
+                for (var s : this.selections) {
+                    Selection sel = selectionFromString(s);
+                    selection = selection.join(sel);
+                }
+            } else
+                /* Default to selecting everything. */
+                selection = Selection.all();
+
+            NewMain.this.printImageSummaryFromSelection(selection, System.out);
+            return 0;
+        }
+    }
+    protected Query getQuerySubcommand() { return new Query(); }
+
+    @CommandLine.Command(
+        name = "get",
+        mixinStandardHelpOptions = true,
+        description = "Get one of the tags from an image in the database")
+    protected class Get implements Callable<Integer> {
+        @CommandLine.Parameters(index = "0", paramLabel = "UUID", description = "The ID of the image")
+        protected UUID id;
+        @CommandLine.Parameters(index = "1", paramLabel = "TAG", description = "Name of the tag to fetch")
+        protected String tag;
+
+        @Override
+        public Integer call() throws Exception {
+            var selection = Selection.equals("id", this.id);
+            var images = database.getImages(selection);
+
+            if(images.size() <= 0) {
+                System.err.println("Could not find image with ID " + this.id.toString());
+                return 1;
+            }
+            if(images.size() > 1)
+                throw new RuntimeException("More than one image has the same UUID");
+
+            for(var image : images) {
+                var tag = image.getTag(this.tag);
+                if(tag.isPresent())
+                    System.out.println(tag.get().toString());
+                else {
+                    System.err.println("Could not find tag " + this.tag);
+                    return 1;
+                }
+            }
+            return 0;
+        }
+    }
+    protected Get getGetSubcommand() { return new Get(); }
 
     /** Register the taggers in the database.
      *

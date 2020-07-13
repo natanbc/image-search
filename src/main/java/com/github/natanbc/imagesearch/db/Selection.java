@@ -23,6 +23,8 @@ public class Selection {
         return new Selection(selectors);
     }
 
+
+
     /** Performs this selection.
      * @param connection The connection that will be used for the query.
      * @param table The table that will be queried.
@@ -47,6 +49,10 @@ public class Selection {
     /** Create a new selector, which selects any row. */
     public static Selection all() {
         return Selection.fromSingleSelector(new All());
+    }
+    /** Create a new selector, which selects no row. */
+    public static Selection none() {
+        return new Selection(new HashSet<>());
     }
     /** Create a new selector, which selects all rows whose value in the given
      * column equal that of the given element.

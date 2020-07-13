@@ -7,7 +7,7 @@ plugins {
 group 'com.github.natanbc'
 version '0.1'
 
-mainClassName = 'com.github.natanbc.imagesearch.Main'
+mainClassName = 'com.github.natanbc.imagesearch.NewMain'
 
 sourceCompatibility = 14
 targetCompatibility = 14
@@ -20,6 +20,8 @@ dependencies {
     compile 'net.sourceforge.tess4j:tess4j:4.5.1'
     compile 'org.xerial:sqlite-jdbc:3.31.1'
     compile 'commons-cli:commons-cli:1.4'
+    compile 'info.picocli:picocli:4.4.0'
+    annotationProcessor 'info.picocli:picocli-codegen:4.4.0'
     compile project(':Taggers:Frequency')
     compile project(':Taggers:Magnitude')
     compile project(':Taggers:Text')
