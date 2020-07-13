@@ -97,6 +97,11 @@ public class Database {
         );
     }
 
+    /** The taggers currently registered in this database. */
+    public Map<String, Tagger> getTaggers() {
+        return taggers;
+    }
+
     public interface PassFilter {
         /** Whether this tagger should be run. */
         boolean shouldRun(String key, Tagger tagger);
@@ -231,14 +236,13 @@ public class Database {
         }
     }
 
-    /** Query the database using this selection and gather the data for the
-     * images it selected into a set.
-     *
+    /** Query all the images in the selection.
+     * @param selection The selection of images that will be queried.
      * @return The set of all images this selection managed to hit.
      * @throws InterruptedException When acquisition of the database fails.
      * @throws SQLException When an SQL query fails.
      */
-    public Set<Image> queryImages(Selection selection) throws InterruptedException, SQLException {
+    public Set<Image> getImages(Selection selection) throws InterruptedException, SQLException {
         try(var handle = this.database.take()) {
             var connection = handle.getConnection();
             HashSet<Image> images = new HashSet<>();
@@ -255,104 +259,6 @@ public class Database {
                     }
                 }
             }
-
-            return images;
-        }
-    }
-
-    /** Queries all of the registered images.
-     * @return A set of all the images in the database, described as
-     * {@link Image} objects.
-     * @throws InterruptedException When a connection to the database could not
-     * be acquired from the pool.
-     * @throws SQLException Upon failure of a SQL operation.
-     */
-    public Set<Image> getImages() throws InterruptedException, SQLException {
-        try(var handle = this.database.take()) {
-            var connection = handle.getConnection();
-            var statement = connection.createStatement();
-            var query = String.format(
-                    "select * from %s",
-                    IMAGES_TABLE);
-            if (!statement.execute(query))
-                /* This statement having failed to execute is a bug. */
-                throw new RuntimeException(
-                        "Could not submit query: " + query,
-                        statement.getWarnings());
-
-            var result = statement.getResultSet();
-            var images = new HashSet<Image>();
-            while (result.next()) {
-                var uuid_str = result.getString("id");
-                var path_str = result.getString("path");
-
-                if (uuid_str == null || path_str == null) {
-                    /* This statement having failed to execute is a bug. */
-                    throw new RuntimeException("Required field \"path\" has a null value");
-                }
-                var uuid = UUID.fromString(uuid_str);
-
-                HashMap<String, Object> tags = new HashMap<>(this.taggers.size());
-                for (var name : this.taggers.keySet()) {
-                    var column = Database.taggerColumnName(name);
-                    var value = result.getObject(column);
-
-                    tags.put(name, value);
-                }
-
-                images.add(new Image(uuid, Path.of(path_str), tags));
-            }
-
-            statement.close();
-            return images;
-        }
-    }
-
-    /** Queries the database, searching for all the entries with the given path.
-     * @return A set of all the entries that have the given path, described as
-     * {@link Image} objects.
-     * @throws InterruptedException When a connection to the database could not
-     * be acquired from the pool.
-     * @throws SQLException Upon failure of a SQL operation.
-     */
-    public Set<Image> getImageByPath(Path path) throws InterruptedException, SQLException {
-        try(var handle = this.database.take()) {
-            var connection = handle.getConnection();
-            var statement = connection.createStatement();
-            var query = String.format(
-                    "select * from %s where path=\"%s\"",
-                    IMAGES_TABLE,
-                    path.toString());
-            if (!statement.execute(query))
-                /* This statement having failed to execute is a bug. */
-                throw new RuntimeException(
-                        "Could not submit query: " + query,
-                        statement.getWarnings());
-
-            var result = statement.getResultSet();
-            var images = new HashSet<Image>();
-            while (result.next()) {
-                var uuid_str = result.getString("id");
-                var path_str = result.getString("path");
-
-                if (uuid_str == null || path_str == null) {
-                    /* This statement having failed to execute is a bug. */
-                    throw new RuntimeException("Required field \"path\" has a null value");
-                }
-                var uuid = UUID.fromString(uuid_str);
-
-                HashMap<String, Object> tags = new HashMap<>(this.taggers.size());
-                for (var name : this.taggers.keySet()) {
-                    var column = Database.taggerColumnName(name);
-                    var value = result.getObject(column);
-
-                    tags.put(name, value);
-                }
-
-                images.add(new Image(uuid, Path.of(path_str), tags));
-            }
-
-            statement.close();
             return images;
         }
     }

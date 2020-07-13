@@ -5,10 +5,7 @@ import com.github.darkryu550.imagesearch.Tagger;
 import java.nio.file.Path;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.HashMap;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 public class Image {
     protected final UUID id;
@@ -31,9 +28,6 @@ public class Image {
      * {@link ResultSet} does not store a valid {@link Image}.
      */
     protected static Optional<Image> fromResultSet(ResultSet set, HashMap<String, Tagger> taggers) throws SQLException {
-        if (!set.next())
-            return Optional.empty();
-
         var uuid_str = set.getString("id");
         var path_str = set.getString("path");
         if (uuid_str == null)
@@ -65,6 +59,8 @@ public class Image {
     public Optional<Object> getTag(String name) {
         return Optional.ofNullable(this.tags.get(name));
     }
+
+    public Map<String, Object> getTags() { return this.tags; }
 
     @Override
     public boolean equals(Object o) {
