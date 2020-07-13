@@ -2,8 +2,10 @@ package com.github.natanbc.imagesearch;
 
 import com.github.darkryu550.imagesearch.TaggingException;
 import com.github.darkryu550.imagesearch.frequency.FrequencyBand;
+import com.github.darkryu550.imagesearch.magnitude.*;
 import com.github.darkryu550.textextractor.TesseractTagger;
 import com.github.natanbc.imagesearch.db.Database;
+import com.github.natanbc.imagesearch.db.Selection;
 import com.github.natanbc.imagesearch.db.pool.SingleConnectionPool;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.OptionGroup;
@@ -20,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 public class NewMain {
     public static void main(String[] args)
-        throws SQLException, IOException, InterruptedException, ExecutionException, TaggingException {
+        throws SQLException, IOException, InterruptedException, ExecutionException {
 
         var executor = Executors.newCachedThreadPool();
         var connection = new SingleConnectionPool(connect("./index.db"));
@@ -29,12 +31,31 @@ public class NewMain {
         try {
             database.register("frequencyBand", new FrequencyBand());
             database.register("tesseract", new TesseractTagger());
+            database.register("haralickContrast", new HaralickContrast());
+            database.register("haralickCorrelation", new HaralickCorrelation());
+            database.register("haralickEnergy", new HaralickEnergy());
+            database.register("haralickEntropy", new HaralickEntropy());
+            database.register("haralickHomogeneity", new HaralickHomogeneity());
+            database.register("haralickMaxProb", new HaralickMaximumProbability());
+            database.register("histogram", new Histogram());
         } catch (InterruptedException e) {
             System.err.println("Could not register database tagger:");
             e.printStackTrace();
             System.exit(1);
         }
-        database.addImage(Path.of("images/final_project.png")).runOn(executor);
+        try {
+            var image = database.addImage(Path.of("images/final_project.png"));
+            database.getPassWithAllTaggers().runOn(executor, image);
+
+        } catch(TaggingException e) {
+            executor.shutdown();
+            executor.awaitTermination(10, TimeUnit.SECONDS);
+            connection.close();
+
+            System.err.println("One of the taggers has failed on the image");
+            e.printStackTrace();
+            System.exit(1);
+        }
 
         /* Cleanup. */
         executor.shutdown();

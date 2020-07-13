@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.function.Predicate;
 
 public class Database {
     public static final String IMAGES_TABLE = "images";
@@ -96,6 +97,55 @@ public class Database {
         );
     }
 
+    public interface PassFilter {
+        /** Whether this tagger should be run. */
+        boolean shouldRun(String key, Tagger tagger);
+    }
+
+    /** Runs the filter function on every registered filter and collects whole
+     * passes on those that have been selected. */
+    public Pass getPassForFilteredTaggers(PassFilter filter) {
+        HashMap<String, Tagger> selected = new HashMap<>();
+        for(var entry : this.taggers.entrySet()) {
+            if(filter.shouldRun(entry.getKey(), entry.getValue()))
+                selected.put(entry.getKey(), entry.getValue());
+        }
+
+        return new Pass(
+            this.database,
+            selected,
+            IMAGES_TABLE,
+            null
+        );
+    }
+
+    /** Selects a tagger by its name and runs a whole pass over it. */
+    public Optional<Pass> getPass(String tagger) {
+        Tagger t = this.taggers.get(tagger);
+        if(t == null)
+            return Optional.empty();
+
+        HashMap<String, Tagger> isolate = new HashMap<>(1);
+        isolate.put(tagger, t);
+
+        return Optional.of(new Pass(
+            this.database,
+            isolate,
+            IMAGES_TABLE,
+            null
+        ));
+    }
+
+    /** Get a pass with all taggers. */
+    public Pass getPassWithAllTaggers() {
+        return new Pass(
+            this.database,
+            this.taggers,
+            IMAGES_TABLE,
+            null
+        );
+    }
+
     /** Adds a new image to the catalogue.
      * @return A {@link Pass} object that, when run, will execute all the
      * registered taggers on this new image.
@@ -105,7 +155,7 @@ public class Database {
      * @throws IOException When the image file could not be read or its absolute
      * path could not be acquired.
      */
-    public Pass addImage(Path path) throws InterruptedException, SQLException, IOException {
+    public Selection addImage(Path path) throws InterruptedException, SQLException, IOException {
         /* Get a new UUID, making sure it hasn't been used before. */
         UUID id;
         do {
@@ -129,11 +179,7 @@ public class Database {
             statement.close();
         }
 
-        return new Pass(
-            this.database,
-            this.taggers,
-            IMAGES_TABLE,
-            String.format("id=\"%s\"", id));
+        return Selection.equals("id", id);
     }
 
     /** Queries for an image given its UUID value.
@@ -182,6 +228,35 @@ public class Database {
             statement.close();
 
             return Optional.of(new Image(id, Path.of(path_str), tags));
+        }
+    }
+
+    /** Query the database using this selection and gather the data for the
+     * images it selected into a set.
+     *
+     * @return The set of all images this selection managed to hit.
+     * @throws InterruptedException When acquisition of the database fails.
+     * @throws SQLException When an SQL query fails.
+     */
+    public Set<Image> queryImages(Selection selection) throws InterruptedException, SQLException {
+        try(var handle = this.database.take()) {
+            var connection = handle.getConnection();
+            HashSet<Image> images = new HashSet<>();
+
+            for(var selector : selection.selectors) {
+                try(var statement = selector.getStatement(connection, IMAGES_TABLE, "*")) {
+                    /* Extract all of the images we are able to gather from this statement. */
+                    statement.execute();
+                    var result = statement.getResultSet();
+
+                    while(result.next()) {
+                        var value = Image.fromResultSet(result, this.taggers);
+                        value.ifPresent(images::add);
+                    }
+                }
+            }
+
+            return images;
         }
     }
 

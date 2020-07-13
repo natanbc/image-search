@@ -1,6 +1,10 @@
 package com.github.natanbc.imagesearch.db;
 
+import com.github.darkryu550.imagesearch.Tagger;
+
 import java.nio.file.Path;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Objects;
 import java.util.Optional;
@@ -15,6 +19,39 @@ public class Image {
         this.id = id;
         this.path = path;
         this.tags = tags;
+    }
+
+    /** Tries to get an image from a result set.
+     *
+     * @param set The result set.
+     * @param taggers The set of taggers whose values will be queried.
+     * @return The value of the next image, if any.
+     * @throws SQLException In case of an SQL error.
+     * @throws IllegalArgumentException When the next element in the given
+     * {@link ResultSet} does not store a valid {@link Image}.
+     */
+    protected static Optional<Image> fromResultSet(ResultSet set, HashMap<String, Tagger> taggers) throws SQLException {
+        if (!set.next())
+            return Optional.empty();
+
+        var uuid_str = set.getString("id");
+        var path_str = set.getString("path");
+        if (uuid_str == null)
+            throw new IllegalArgumentException("Required field \"id\" has a null value");
+
+        if (path_str == null)
+            /* This statement having failed to execute is a bug. */
+            throw new IllegalArgumentException("Required field \"path\" has a null value");
+
+        HashMap<String, Object> tags = new HashMap<>(taggers.size());
+        for (var name : taggers.keySet()) {
+            var column = Database.taggerColumnName(name);
+            var value = set.getObject(column);
+
+            tags.put(name, value);
+        }
+
+        return Optional.of(new Image(UUID.fromString(uuid_str), Path.of(path_str), tags));
     }
 
     public UUID getId() {
