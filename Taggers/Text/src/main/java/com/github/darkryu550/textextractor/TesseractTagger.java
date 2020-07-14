@@ -29,6 +29,9 @@ public class TesseractTagger implements Tagger {
 
     @Override
     public Optional<Double> getTagDistance(Object a, Object b) {
+        if(a == null || b == null)
+            return Optional.empty();
+
         try {
             String l = (String) a;
             String r = (String) b;

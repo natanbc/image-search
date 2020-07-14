@@ -27,6 +27,9 @@ public class HaralickEnergy implements Tagger {
 
     @Override
     public Optional<Double> getTagDistance(Object a, Object b) {
+        if(a == null || b == null)
+            return Optional.empty();
+
         try {
             Double l = (Double) a;
             Double r = (Double) b;

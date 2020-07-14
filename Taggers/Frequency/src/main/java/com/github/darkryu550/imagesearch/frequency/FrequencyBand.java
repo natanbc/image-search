@@ -110,6 +110,9 @@ public class FrequencyBand implements Tagger {
 
     @Override
     public Optional<Double> getTagDistance(Object a, Object b) {
+        if(a == null || b == null)
+            return Optional.empty();
+
         try {
             List<?> la = (List<?>) a;
             List<?> lb = (List<?>) b;
