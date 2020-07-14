@@ -10,10 +10,8 @@ import java.awt.image.BufferedImage;
 import java.awt.image.ColorConvertOp;
 import java.sql.SQLType;
 import java.sql.Types;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class FrequencyBand implements Tagger {
@@ -99,8 +97,11 @@ public class FrequencyBand implements Tagger {
     @Override
     public Object getTagFromString(String value) {
         try {
+            value = value.strip().replace("[", "").replace("]", "");
             return Arrays.stream(value.split(","))
-                .mapToInt(Integer::parseInt).toArray();
+                .map(String::strip)
+                .map(Integer::parseInt)
+                .collect(Collectors.toCollection(ArrayList::new));
         }catch(NumberFormatException e) {
             throw new IllegalArgumentException(
                 "Expected a list of integers separated by commas",
@@ -120,8 +121,8 @@ public class FrequencyBand implements Tagger {
 
             double total = 0.0;
             for(int i = 0; i < size; ++i) {
-                Double l = (Double) la.get(i);
-                Double r = (Double) lb.get(i);
+                Integer l = (Integer) la.get(i);
+                Integer r = (Integer) lb.get(i);
 
                 total += Math.pow(l - r, 2);
             }

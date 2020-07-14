@@ -14,12 +14,9 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.HashSet;
-import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 @CommandLine.Command(
     name = "image-search",
@@ -64,6 +61,7 @@ public class Main implements AutoCloseable {
                 .addSubcommand(main.getQuerySubcommand())
                 .addSubcommand(main.getGetSubcommand())
                 .addSubcommand(main.getPassSubcommand())
+                .addSubcommand(main.getClosestSubcommand())
                 .execute(args);
 
             /* The cached thread pool may keep threads alive for 60 more seconds.
@@ -297,6 +295,105 @@ public class Main implements AutoCloseable {
         }
     }
     protected Get getGetSubcommand() { return new Get(); }
+
+    @CommandLine.Command(
+        name = "distances",
+        mixinStandardHelpOptions = true,
+        description = "Get the ordered list of images closest to a given image")
+    protected class Closest implements Callable<Integer> {
+        @CommandLine.Parameters(index = "0", paramLabel = "UUID", description = "The ID of the image")
+        protected UUID id;
+        @CommandLine.Parameters(index = "1", paramLabel = "TAG", description = "Name of the tag to fetch")
+        protected String tag;
+        @CommandLine.Option(names = { "-n", "--number" }, description = "Number of closest images to show")
+        protected Integer number;
+
+        @Override
+        public Integer call() throws Exception {
+            var selection = Selection.equals("id", this.id);
+            var images = database.getImages(selection);
+
+            if(!database.getTaggers().containsKey(this.tag)) {
+                System.err.println("The given tagger has not been registered");
+                return 1;
+            }
+            if(images.size() <= 0) {
+                System.err.println("Could not find image with ID " + this.id.toString());
+                return 1;
+            }
+            if(images.size() > 1)
+                throw new RuntimeException("More than one image has the same UUID");
+
+            TagBundle current = null;
+            for(var image : images) {
+                var tag = image.getTag(this.tag).orElse(null);
+                current = new TagBundle(image, tag);
+            }
+
+            ArrayList<TagBundle> others = new ArrayList<>(images.size());
+            for(var image : database.getImages(Selection.differs("id", this.id))) {
+                var tag = image.getTag(this.tag).orElse(null);
+                others.add(new TagBundle(image, tag));
+            }
+
+            var tagger = database.getTaggers().get(this.tag);
+            ArrayList<Future<Optional<DistanceBundle>>> futures = new ArrayList<>(others.size());
+            for(var bundle : others) {
+                TagBundle finalCurrent = current;
+                futures.add(executor.submit(() -> {
+                    var distance = tagger.getTagDistance(finalCurrent.tag, bundle.tag);
+                    return distance.map((d) -> new DistanceBundle(bundle.image, d));
+                }));
+            }
+            ArrayList<DistanceBundle> distances = futures.stream()
+                .map((future) -> {
+                    try {
+                        return future.get();
+                    } catch (InterruptedException | ExecutionException e) {
+                        e.printStackTrace();
+                        System.exit(1);
+                    }
+                    return Optional.ofNullable((DistanceBundle) null);
+                })
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .sorted(Comparator.comparing(a -> a.distance))
+                .collect(Collectors.toCollection(ArrayList::new));
+
+            var len = distances.size();
+            if(this.number != null) len = this.number;
+            len = Math.min(len, distances.size());
+
+            for(int i = 0; i < len; ++i) {
+                var bundle = distances.get(i);
+                System.out.printf("[%d/%d] With a distance of %f", i + 1, len, bundle.distance);
+                Main.this.printImageSummary(bundle.image, System.out);
+            }
+
+            return 0;
+        }
+
+        private final class TagBundle {
+            public final Image image;
+            public final Object tag;
+
+            private TagBundle(Image image, Object tag) {
+                this.image = image;
+                this.tag = tag;
+            }
+        }
+
+        private final class DistanceBundle {
+            public final Image image;
+            public final Double distance;
+
+            private DistanceBundle(Image image, Double distance) {
+                this.image = image;
+                this.distance = distance;
+            }
+        }
+    }
+    protected Closest getClosestSubcommand() { return new Closest(); }
 
     @CommandLine.Command(
         name = "pass",

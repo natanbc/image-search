@@ -35,7 +35,7 @@ public class HaralickMaximumProbability implements Tagger {
             Double l = (Double) a;
             Double r = (Double) b;
 
-            return Optional.of(l - r);
+            return Optional.of(Math.abs(l - r));
         } catch(ClassCastException e) {
             throw new IllegalArgumentException("Invalid argument has been passed", e);
         }
