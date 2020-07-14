@@ -38,9 +38,15 @@ public class Image {
             throw new IllegalArgumentException("Required field \"path\" has a null value");
 
         HashMap<String, Object> tags = new HashMap<>(taggers.size());
-        for (var name : taggers.keySet()) {
+        for (var entries: taggers.entrySet()) {
+            var name = entries.getKey();
             var column = Database.taggerColumnName(name);
             var value = set.getObject(column);
+            if(value instanceof String) {
+                /* Happens that some values get converted to string when they get
+                 * stored in the database. Here, we have to convert them back. */
+                value = entries.getValue().getTagFromString((String) value);
+            }
 
             tags.put(name, value);
         }
