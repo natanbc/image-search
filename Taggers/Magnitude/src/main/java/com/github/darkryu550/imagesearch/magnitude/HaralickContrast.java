@@ -5,6 +5,7 @@ import com.github.darkryu550.imagesearch.TaggingException;
 
 import java.awt.image.BufferedImage;
 import java.sql.SQLType;
+import java.util.List;
 import java.util.Optional;
 
 /** Find the Haralick maximum probability for an image. */
@@ -31,6 +32,18 @@ public class HaralickContrast implements Tagger {
             return Double.parseDouble(value);
         } catch(NumberFormatException e) {
             throw new IllegalArgumentException("Expected a real number literal", e);
+        }
+    }
+
+    @Override
+    public Optional<Double> getTagDistance(Object a, Object b) {
+        try {
+            Double l = (Double) a;
+            Double r = (Double) b;
+
+            return Optional.of(l - r);
+        } catch(ClassCastException e) {
+            throw new IllegalArgumentException("Invalid argument has been passed", e);
         }
     }
 

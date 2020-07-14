@@ -30,4 +30,14 @@ public interface Tagger {
      * @return The tag that most closely matches the given input string.
      */
     Object getTagFromString(String value);
+
+    /** Given two tag objects, calculate a distance value between them.
+     * @param a The origin tag.
+     * @param b The destination tag.
+     * @throws IllegalArgumentException If either tag objects are not valid
+     * tag objects.
+     * @return The signed distance from the first object to the second object,
+     * if any can be computed.
+     */
+    Optional<Double> getTagDistance(Object a, Object b);
 }

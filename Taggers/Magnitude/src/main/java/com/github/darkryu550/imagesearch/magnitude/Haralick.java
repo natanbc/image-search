@@ -82,7 +82,7 @@ public final class Haralick {
             }
 
         /* Calculate the matrix and find its maximum value. */
-        var processed = 0;
+        long processed = 0;
         for(int i = Math.max(0, -dy); i < Math.min(levelData.length, levelData.length - dy); ++i)
             for(int j = Math.max(0, -dx); j < Math.min(levelData[i].length, levelData[i].length - dx); ++j) {
                 var a = levelData[i][j];
@@ -104,7 +104,7 @@ public final class Haralick {
 
             var iterator = this.matrix.listIterator(i);
             iterator.next();
-            iterator.set((double)i / (double) processed);
+            iterator.set(c / (double) processed);
         }
     }
 
@@ -159,7 +159,6 @@ public final class Haralick {
 
             sum += Math.pow((double)j - mc, 2) * inner;
         }
-        System.out.printf("%f\n", sum);
         return sum;
     }
 }

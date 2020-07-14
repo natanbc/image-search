@@ -9,6 +9,7 @@ import java.awt.image.ColorConvertOp;
 import java.sql.SQLType;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
 
@@ -67,6 +68,28 @@ public class Histogram implements Tagger {
                 e);
         }
     }
+
+    @Override
+    public Optional<Double> getTagDistance(Object a, Object b) {
+        try {
+            List<?> la = (List<?>) a;
+            List<?> lb = (List<?>) b;
+            var size = Math.min(la.size(), lb.size());
+
+            double total = 0.0;
+            for(int i = 0; i < size; ++i) {
+                Double l = (Double) la.get(i);
+                Double r = (Double) lb.get(i);
+
+                total += Math.pow(l - r, 2);
+            }
+
+            return Optional.of(Math.sqrt(total));
+        } catch(ClassCastException e) {
+            throw new IllegalArgumentException("Invalid argument has been passed", e);
+        }
+    }
+
 
     @Override
     public SQLType getType() {

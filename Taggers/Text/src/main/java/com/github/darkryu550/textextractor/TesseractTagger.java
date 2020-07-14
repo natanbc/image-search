@@ -28,6 +28,26 @@ public class TesseractTagger implements Tagger {
     }
 
     @Override
+    public Optional<Double> getTagDistance(Object a, Object b) {
+        try {
+            String l = (String) a;
+            String r = (String) b;
+            var size = Math.min(l.length(), r.length());
+
+            /* Calculate a Levenshtein distance between our strings. */
+            int levenshtein = Math.max(l.length(), r.length()) - size;
+
+            for(int i = 0; i < size; ++i)
+                if(l.charAt(i) != r.charAt(i))
+                    ++levenshtein;
+
+            return Optional.of((double) levenshtein);
+        } catch(ClassCastException e) {
+            throw new IllegalArgumentException("Invalid argument has been passed", e);
+        }
+    }
+
+    @Override
     public SQLType getType() {
         return new SQLType() {
             @Override

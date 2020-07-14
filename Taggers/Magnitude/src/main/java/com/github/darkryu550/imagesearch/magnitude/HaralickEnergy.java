@@ -26,6 +26,18 @@ public class HaralickEnergy implements Tagger {
     }
 
     @Override
+    public Optional<Double> getTagDistance(Object a, Object b) {
+        try {
+            Double l = (Double) a;
+            Double r = (Double) b;
+
+            return Optional.of(l - r);
+        } catch(ClassCastException e) {
+            throw new IllegalArgumentException("Invalid argument has been passed", e);
+        }
+    }
+
+    @Override
     public Object getTagFromString(String value) {
         try {
             return Double.parseDouble(value);
