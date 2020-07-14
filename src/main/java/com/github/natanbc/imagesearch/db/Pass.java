@@ -70,13 +70,11 @@ public class Pass {
 
                         futures.add(executor.submit(() -> {
                             try {
-                                System.out.printf("Starting task %s on image %s\n", name, imid);
                                 var packet = new Packet(
                                     name,
                                     imid,
                                     /* We should submit a null value to the database. */
                                     tagger.tag(buff).orElse(null));
-                                System.out.printf("Finished task %s on image %s\n", name, imid);
                                 return new TagResult(null, packet);
                             } catch (TaggingException e) {
                                 return new TagResult(e, null);
