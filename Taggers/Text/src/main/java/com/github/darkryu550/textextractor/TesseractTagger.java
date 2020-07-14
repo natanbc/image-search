@@ -17,6 +17,11 @@ public class TesseractTagger implements Tagger {
             return Optional.ofNullable(tesseract.doOCR(image));
         } catch (TesseractException e) {
             throw new TaggingException("Could not perform OCR extraction", e);
+        } catch(Error e) {
+            /* This is generally not good practice, but Tess4j offers us no
+             * cleaner way of catching the case in which the trained data
+             * files aren't present. */
+            return Optional.empty();
         }
     }
 
