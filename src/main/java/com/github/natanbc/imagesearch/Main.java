@@ -212,11 +212,20 @@ public class Main implements AutoCloseable {
         var lhs = s.substring(0, index).strip();
         var rhs = s.substring(index + operator.length()).strip();
 
-        var src = this.database.getTaggers().get(lhs);
-        if(src == null)
-            throw new IllegalArgumentException("No registered tagger matches \"" + lhs + "\"");
-        var tag = src.getTagFromString(rhs);
-        var col = Database.taggerColumnName(lhs);
+        Object tag = rhs;
+        String col = lhs;
+        /* `id` and `path` are special cases. */
+        if(lhs.equals("id"))
+            tag = UUID.fromString(rhs);
+        else if(lhs.equals("path"))
+            tag = Path.of(rhs);
+        else {
+            var src = this.database.getTaggers().get(lhs);
+            if (src == null)
+                throw new IllegalArgumentException("No registered tagger matches \"" + lhs + "\"");
+            tag = src.getTagFromString(rhs);
+            col = Database.taggerColumnName(lhs);
+        }
 
         Selection sel;
         switch(operator) {
@@ -426,6 +435,7 @@ public class Main implements AutoCloseable {
                 });
 
             pass.runOn(executor, selection);
+            Main.this.printImageSummaryFromSelection(selection, System.out);
             return 0;
         }
     }
